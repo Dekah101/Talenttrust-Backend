@@ -26,8 +26,10 @@ data is per-instance and resets on redeploy.
 | GET | `/openapi.json` | OpenAPI 3 spec |
 | GET | `/api/v1/chain` | On-chain contract deployment info |
 | GET | `/api/v1/stats` | Aggregate statistics |
+| GET | `/api/v1/audit/verify` | Verify the retained hash-chained audit log |
 | GET/POST | `/api/v1/contracts` | List (`?status=`, `?party=`, `?linked=true\|false`) / create escrow contracts |
 | GET | `/api/v1/contracts/:id` | Get a contract |
+| GET | `/api/v1/contracts/:id/history?limit=100&cursor=` | Oldest-first audit history (maximum page size 1000) |
 | POST | `/api/v1/contracts/:id/deposit` | `{ "amount": 100 }` |
 | POST | `/api/v1/contracts/:id/milestones/:index/release` | Release a milestone |
 | POST | `/api/v1/contracts/:id/dispute` | `{ "raisedBy": "G...", "reason": "..." }` |
@@ -55,6 +57,10 @@ Every request is assigned a correlation id. Send `X-Request-Id` (must match `^[A
 `X-Request-Id` response header and included in every error JSON body. Access logs are emitted as structured JSON (one line per request) and
 unexpected 500s are logged with a stack trace (never leaked to the client). Authorization, `x-api-key` and `Cookie` header values are redacted
 and request bodies are never logged.
+
+Audit history is retained in memory, capped at 100,000 entries with oldest-first eviction. Verification
+covers all retained entries and reports `truncatedBeforeSeq`; audit data is not persisted and resets when
+the process or serverless instance is replaced.
 
 Standalone server timeouts (env, all optional): `KEEP_ALIVE_TIMEOUT_MS` (default 65000),
 `HEADERS_TIMEOUT_MS` (default 66000, must be > keep-alive), `REQUEST_TIMEOUT_MS` (default 30000).

@@ -29,6 +29,13 @@ export const openapi = {
       get: { tags: ['System'], summary: 'On-chain escrow contract deployment info', responses: ok('Deployment') },
     },
     '/api/v1/stats': { get: { tags: ['System'], summary: 'Aggregate escrow statistics', responses: ok('Stats') } },
+    '/api/v1/audit/verify': {
+      get: {
+        tags: ['System'],
+        summary: 'Verify the retained audit hash chain',
+        responses: ok('Audit chain verification', { $ref: '#/components/schemas/AuditVerification' }),
+      },
+    },
     '/api/v1/contracts': {
       get: {
         tags: ['Contracts'],
@@ -65,6 +72,22 @@ export const openapi = {
     },
     '/api/v1/contracts/{id}': {
       get: { tags: ['Contracts'], summary: 'Get a contract', parameters: [idParam], responses: ok('Contract', contractRef) },
+    },
+    '/api/v1/contracts/{id}/history': {
+      get: {
+        tags: ['Contracts'],
+        summary: 'Get oldest-first audit history for a contract',
+        parameters: [
+          idParam,
+          { name: 'limit', in: 'query', description: 'Page size (default 100, maximum 1000)', schema: { type: 'integer', minimum: 1, maximum: 1000, default: 100 } },
+          { name: 'cursor', in: 'query', description: 'Return entries with a global sequence greater than this value', schema: { type: 'integer', minimum: 0 } },
+        ],
+        responses: {
+          200: { description: 'Audit history page', content: json({ $ref: '#/components/schemas/AuditHistoryPage' }) },
+          400: errorResponse('Invalid contract ID, limit, or cursor'),
+          404: errorResponse('Contract not found'),
+        },
+      },
     },
     '/api/v1/contracts/{id}/deposit': {
       post: {
@@ -209,6 +232,51 @@ export const openapi = {
           message: { type: 'string' },
         },
         required: ['error', 'message'],
+      },
+      AuditState: {
+        type: 'object',
+        properties: {
+          status: { type: 'string', nullable: true, enum: ['Created', 'Funded', 'Completed', 'Disputed', 'Resolved', 'Cancelled'] },
+          fundedAmount: { oneOf: [{ type: 'number' }, { type: 'string' }] },
+          releasedAmount: { oneOf: [{ type: 'number' }, { type: 'string' }] },
+        },
+        required: ['status', 'fundedAmount', 'releasedAmount'],
+      },
+      AuditEntry: {
+        type: 'object',
+        properties: {
+          seq: { type: 'integer', minimum: 1 },
+          contractId: { type: 'integer', minimum: 1 },
+          action: { type: 'string', enum: ['create', 'deposit', 'release', 'dispute', 'resolve', 'cancel', 'rate'] },
+          actor: { type: 'string', nullable: true },
+          requestId: { type: 'string', nullable: true },
+          at: { type: 'string', format: 'date-time' },
+          before: { $ref: '#/components/schemas/AuditState' },
+          after: { $ref: '#/components/schemas/AuditState' },
+          details: { type: 'object', additionalProperties: true },
+          prevHash: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+          hash: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+        },
+        required: ['seq', 'contractId', 'action', 'actor', 'requestId', 'at', 'before', 'after', 'details', 'prevHash', 'hash'],
+      },
+      AuditHistoryPage: {
+        type: 'object',
+        properties: {
+          data: { type: 'array', items: { $ref: '#/components/schemas/AuditEntry' } },
+          nextCursor: { type: 'integer', nullable: true },
+          truncatedBeforeSeq: { type: 'integer', minimum: 0 },
+        },
+        required: ['data', 'nextCursor', 'truncatedBeforeSeq'],
+      },
+      AuditVerification: {
+        type: 'object',
+        properties: {
+          valid: { type: 'boolean' },
+          entries: { type: 'integer', minimum: 0 },
+          brokenAt: { type: 'integer', minimum: 1 },
+          truncatedBeforeSeq: { type: 'integer', minimum: 0 },
+        },
+        required: ['valid', 'entries', 'truncatedBeforeSeq'],
       },
       ChainMismatchError: {
         type: 'object',

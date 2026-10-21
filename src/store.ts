@@ -4,6 +4,8 @@
  * for the lifetime of the process (or serverless instance).
  */
 
+import { AuditStore, type AuditAction, type AuditContext, type AuditState } from './audit';
+
 export type ContractStatus =
   | 'Created'
   | 'Funded'
@@ -85,6 +87,34 @@ export class EscrowStore {
   private reputation = new Map<string, { completed: number; total: number }>();
   private nextId = 1;
 
+  constructor(public readonly audit = new AuditStore()) {}
+
+  private auditState(c?: EscrowContract): AuditState {
+    return c
+      ? { status: c.status, fundedAmount: c.fundedAmount, releasedAmount: c.releasedAmount }
+      : { status: null, fundedAmount: 0, releasedAmount: 0 };
+  }
+
+  private recordAudit(
+    c: EscrowContract,
+    action: AuditAction,
+    before: AuditState,
+    details: Record<string, unknown>,
+    ctx: AuditContext = {},
+    actor = ctx.actor ?? null,
+  ): void {
+    this.audit.append({
+      contractId: c.id,
+      action,
+      actor,
+      requestId: ctx.requestId ?? null,
+      at: new Date().toISOString(),
+      before,
+      after: this.auditState(c),
+      details,
+    });
+  }
+
   list(filter: { status?: string; party?: string; linked?: boolean } = {}): EscrowContract[] {
     return [...this.contracts.values()].filter(
       (c) =>
@@ -106,7 +136,7 @@ export class EscrowStore {
     freelancer?: unknown;
     token?: unknown;
     milestones?: unknown;
-  }): EscrowContract {
+  }, ctx: AuditContext = {}): EscrowContract {
     const { client, freelancer } = input;
     if (typeof client !== 'string' || typeof freelancer !== 'string' || !client || !freelancer) {
       throw new HttpError(400, 'invalid_parties', 'client and freelancer are required strings');
@@ -165,6 +195,7 @@ export class EscrowStore {
       updatedAt: now,
     };
     this.contracts.set(c.id, c);
+    this.recordAudit(c, 'create', this.auditState(), { totalAmount }, ctx);
     return c;
   }
 
@@ -179,9 +210,10 @@ export class EscrowStore {
     return c;
   }
 
-  deposit(id: number, amountRaw: unknown): EscrowContract {
+  deposit(id: number, amountRaw: unknown, ctx: AuditContext = {}): EscrowContract {
     const c = this.get(id);
     this.requireActive(c);
+    const before = this.auditState(c);
     const isBig =
       typeof c.totalAmount === 'string' ||
       (typeof amountRaw === 'string' && /^\d+$/.test(amountRaw));
@@ -203,7 +235,9 @@ export class EscrowStore {
       }
       c.fundedAmount = (curFunded + amount).toString();
       if (BigInt(c.fundedAmount) === total) c.status = 'Funded';
-      return this.touch(c);
+      this.touch(c);
+      this.recordAudit(c, 'deposit', before, { amount: amount.toString() }, ctx);
+      return c;
     }
 
     const amount = Number(amountRaw);
@@ -215,12 +249,15 @@ export class EscrowStore {
     }
     c.fundedAmount = Number(c.fundedAmount) + amount;
     if (c.fundedAmount === c.totalAmount) c.status = 'Funded';
-    return this.touch(c);
+    this.touch(c);
+    this.recordAudit(c, 'deposit', before, { amount }, ctx);
+    return c;
   }
 
-  release(id: number, index: number): EscrowContract {
+  release(id: number, index: number, ctx: AuditContext = {}): EscrowContract {
     const c = this.get(id);
     this.requireActive(c);
+    const before = this.auditState(c);
     const m = c.milestones[index];
     if (!m) throw new HttpError(404, 'milestone_not_found', `Milestone ${index} not found`);
     if (m.released) throw new HttpError(409, 'already_released', 'Milestone already released');
@@ -235,7 +272,9 @@ export class EscrowStore {
       m.released = true;
       c.releasedAmount = (BigInt(String(c.releasedAmount)) + needed).toString();
       if (c.milestones.every((x) => x.released)) c.status = 'Completed';
-      return this.touch(c);
+      this.touch(c);
+      this.recordAudit(c, 'release', before, { index, amount: needed.toString() }, ctx);
+      return c;
     }
 
     if (Number(c.fundedAmount) - Number(c.releasedAmount) < Number(m.amount)) {
@@ -244,25 +283,30 @@ export class EscrowStore {
     m.released = true;
     c.releasedAmount = Number(c.releasedAmount) + Number(m.amount);
     if (c.milestones.every((x) => x.released)) c.status = 'Completed';
-    return this.touch(c);
+    this.touch(c);
+    this.recordAudit(c, 'release', before, { index, amount: Number(m.amount) }, ctx);
+    return c;
   }
 
-  openDispute(id: number, raisedBy: unknown, reason: unknown): EscrowContract {
+  openDispute(id: number, raisedBy: unknown, reason: unknown, ctx: AuditContext = {}): EscrowContract {
     const c = this.get(id);
     if (raisedBy !== c.client && raisedBy !== c.freelancer) {
       throw new HttpError(403, 'unauthorized', 'Only the client or freelancer can open a dispute');
     }
     this.requireActive(c);
+    const before = this.auditState(c);
     c.status = 'Disputed';
     c.dispute = {
       raisedBy,
       reason: typeof reason === 'string' && reason ? reason : 'No reason given',
       openedAt: new Date().toISOString(),
     };
-    return this.touch(c);
+    this.touch(c);
+    this.recordAudit(c, 'dispute', before, { reason: c.dispute.reason }, ctx, String(raisedBy));
+    return c;
   }
 
-  resolveDispute(id: number, freelancerBpsRaw: unknown): EscrowContract {
+  resolveDispute(id: number, freelancerBpsRaw: unknown, ctx: AuditContext = {}): EscrowContract {
     const c = this.get(id);
     if (c.status !== 'Disputed') {
       throw new HttpError(409, 'invalid_status', 'Only disputed contracts can be resolved');
@@ -271,25 +315,32 @@ export class EscrowStore {
     if (!Number.isInteger(bps) || bps < 0 || bps > 10000) {
       throw new HttpError(400, 'invalid_split', 'freelancerBps must be an integer between 0 and 10000');
     }
+    const before = this.auditState(c);
     const remaining = Number(c.fundedAmount) - Number(c.releasedAmount);
     const toFreelancer = Math.round((remaining * bps) / 10000);
+    const toClient = remaining - toFreelancer;
     c.releasedAmount = Number(c.releasedAmount) + toFreelancer;
     c.status = 'Resolved';
     if (c.dispute) {
       c.dispute.freelancerBps = bps;
       c.dispute.resolvedAt = new Date().toISOString();
     }
-    return this.touch(c);
+    this.touch(c);
+    this.recordAudit(c, 'resolve', before, { freelancerBps: bps, toFreelancer, toClient }, ctx);
+    return c;
   }
 
-  cancel(id: number): EscrowContract {
+  cancel(id: number, ctx: AuditContext = {}): EscrowContract {
     const c = this.get(id);
     this.requireActive(c);
+    const before = this.auditState(c);
     c.status = 'Cancelled';
-    return this.touch(c);
+    this.touch(c);
+    this.recordAudit(c, 'cancel', before, {}, ctx);
+    return c;
   }
 
-  rate(id: number, ratingRaw: unknown): Reputation {
+  rate(id: number, ratingRaw: unknown, ctx: AuditContext = {}): Reputation {
     const c = this.get(id);
     if (c.status !== 'Completed') {
       throw new HttpError(409, 'invalid_status', 'Only completed contracts can issue reputation');
@@ -301,12 +352,14 @@ export class EscrowStore {
     if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
       throw new HttpError(400, 'invalid_rating', 'rating must be an integer from 1 to 5');
     }
+    const before = this.auditState(c);
     const r = this.reputation.get(c.freelancer) ?? { completed: 0, total: 0 };
     r.completed += 1;
     r.total += rating;
     this.reputation.set(c.freelancer, r);
     c.reputationIssued = true;
     this.touch(c);
+    this.recordAudit(c, 'rate', before, { rating }, ctx);
     return this.getReputation(c.freelancer);
   }
 

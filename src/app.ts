@@ -11,6 +11,8 @@ declare global {
   namespace Express {
     interface Request {
       id?: string;
+      auth?: { address?: string; apiKeyId?: string };
+      apiKey?: { id?: string };
     }
   }
 }
@@ -34,6 +36,11 @@ const id = (req: Request) => {
   if (!Number.isInteger(n) || n < 1) throw new HttpError(400, 'invalid_id', 'id must be a positive integer');
   return n;
 };
+
+const auditContext = (req: Request) => ({
+  actor: req.auth?.address ?? req.apiKey?.id ?? req.auth?.apiKeyId ?? null,
+  requestId: req.id ?? null,
+});
 
 const REQUEST_ID_RE = /^[A-Za-z0-9._-]{8,128}$/;
 
@@ -122,6 +129,8 @@ export function createApp(
         'GET  /api/v1/contracts',
         'POST /api/v1/contracts',
         'GET  /api/v1/contracts/:id',
+        'GET  /api/v1/contracts/:id/history',
+        'GET  /api/v1/audit/verify',
         'POST /api/v1/contracts/:id/deposit',
         'POST /api/v1/contracts/:id/milestones/:index/release',
         'POST /api/v1/contracts/:id/dispute',
@@ -166,6 +175,10 @@ export function createApp(
   );
   v1.get('/stats', wrap(() => store.stats()));
   v1.get(
+    '/audit/verify',
+    wrap(() => store.audit.verify()),
+  );
+  v1.get(
     '/contracts',
     wrap((req) => {
       let linked: boolean | undefined = undefined;
@@ -183,22 +196,40 @@ export function createApp(
   v1.post(
     '/contracts',
     wrap((req, res) => {
-      res.status(201).json(store.create(req.body ?? {}));
+      res.status(201).json(store.create(req.body ?? {}, auditContext(req)));
     }),
   );
   v1.get('/contracts/:id', wrap((req) => store.get(id(req))));
-  v1.post('/contracts/:id/deposit', wrap((req) => store.deposit(id(req), req.body?.amount)));
+  v1.get(
+    '/contracts/:id/history',
+    wrap((req) => {
+      const limitRaw = req.query.limit;
+      const cursorRaw = req.query.cursor;
+      const limit = limitRaw === undefined ? 100 : Number(limitRaw);
+      const cursor = cursorRaw === undefined ? undefined : Number(cursorRaw);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
+        throw new HttpError(400, 'invalid_limit', 'limit must be an integer between 1 and 1000');
+      }
+      if (cursor !== undefined && (!Number.isInteger(cursor) || cursor < 0)) {
+        throw new HttpError(400, 'invalid_cursor', 'cursor must be a non-negative integer');
+      }
+      const contractId = id(req);
+      store.get(contractId);
+      return { ...store.audit.history(contractId, limit, cursor), truncatedBeforeSeq: store.audit.truncatedBeforeSeq };
+    }),
+  );
+  v1.post('/contracts/:id/deposit', wrap((req) => store.deposit(id(req), req.body?.amount, auditContext(req))));
   v1.post(
     '/contracts/:id/milestones/:index/release',
-    wrap((req) => store.release(id(req), Number(req.params.index))),
+    wrap((req) => store.release(id(req), Number(req.params.index), auditContext(req))),
   );
   v1.post(
     '/contracts/:id/dispute',
-    wrap((req) => store.openDispute(id(req), req.body?.raisedBy, req.body?.reason)),
+    wrap((req) => store.openDispute(id(req), req.body?.raisedBy, req.body?.reason, auditContext(req))),
   );
-  v1.post('/contracts/:id/resolve', wrap((req) => store.resolveDispute(id(req), req.body?.freelancerBps)));
-  v1.post('/contracts/:id/cancel', wrap((req) => store.cancel(id(req))));
-  v1.post('/contracts/:id/reputation', wrap((req) => store.rate(id(req), req.body?.rating)));
+  v1.post('/contracts/:id/resolve', wrap((req) => store.resolveDispute(id(req), req.body?.freelancerBps, auditContext(req))));
+  v1.post('/contracts/:id/cancel', wrap((req) => store.cancel(id(req), auditContext(req))));
+  v1.post('/contracts/:id/reputation', wrap((req) => store.rate(id(req), req.body?.rating, auditContext(req))));
   v1.post(
     '/contracts/:id/link',
     wrap(async (req) => store.linkEscrow(id(req), req.body?.escrowId, chainReader)),
