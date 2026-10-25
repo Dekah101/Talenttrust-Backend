@@ -6,7 +6,7 @@ import request from 'supertest';
 import { createApp } from '../src/app';
 import { InMemoryEventStore } from '../src/indexer/store';
 import { EventIndexer } from '../src/indexer/indexer';
-import { xdr } from '@stellar/stellar-sdk';
+import { nativeToScVal, xdr } from '@stellar/stellar-sdk';
 
 describe('Events API', () => {
   it('returns events with pagination', async () => {
@@ -17,7 +17,7 @@ describe('Events API', () => {
     const symbol = xdr.ScVal.scvSymbol('created');
     const u64 = xdr.ScVal.scvU64(xdr.Uint64.fromString('1'));
     const address = xdr.ScVal.scvString('GTESTAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
-    const amount = xdr.ScVal.scvU128(xdr.UInt128.fromString('100'));
+    const amount = nativeToScVal(100n, { type: 'u128' });
 
     for (let i = 0; i < 10; i++) {
       eventStore.append([

@@ -2,7 +2,7 @@
  * Tests for event indexer with fake RPC.
  */
 
-import { xdr } from '@stellar/stellar-sdk';
+import { nativeToScVal, xdr } from '@stellar/stellar-sdk';
 import { EventIndexer } from '../src/indexer/indexer';
 import { InMemoryEventStore } from '../src/indexer/store';
 
@@ -64,7 +64,7 @@ describe('EventIndexer', () => {
     const symbol = xdr.ScVal.scvSymbol('created');
     const u64 = xdr.ScVal.scvU64(xdr.Uint64.fromString('1'));
     const address = xdr.ScVal.scvString('GTESTAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
-    const amount = xdr.ScVal.scvU128(xdr.UInt128.fromString('100'));
+    const amount = nativeToScVal(100n, { type: 'u128' });
 
     for (let i = 0; i < 15; i++) {
       fakeServer.addEvent({
@@ -99,7 +99,7 @@ describe('EventIndexer', () => {
     const symbol = xdr.ScVal.scvSymbol('created');
     const u64 = xdr.ScVal.scvU64(xdr.Uint64.fromString('1'));
     const address = xdr.ScVal.scvString('GTESTAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
-    const amount = xdr.ScVal.scvU128(xdr.UInt128.fromString('100'));
+    const amount = nativeToScVal(100n, { type: 'u128' });
 
     fakeServer.addEvent({
       id: 'event-1',
@@ -138,7 +138,7 @@ describe('EventIndexer', () => {
     const symbol = xdr.ScVal.scvSymbol('created');
     const u64 = xdr.ScVal.scvU64(xdr.Uint64.fromString('1'));
     const address = xdr.ScVal.scvString('GTESTAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
-    const amount = xdr.ScVal.scvU128(xdr.UInt128.fromString('100'));
+    const amount = nativeToScVal(100n, { type: 'u128' });
 
     fakeServer.addEvent({
       id: 'event-1',

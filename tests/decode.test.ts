@@ -2,7 +2,7 @@
  * Tests for event decoder.
  */
 
-import { xdr } from '@stellar/stellar-sdk';
+import { nativeToScVal, xdr } from '@stellar/stellar-sdk';
 import { decodeEvent } from '../src/indexer/decode';
 
 describe('decodeEvent', () => {
@@ -11,7 +11,7 @@ describe('decodeEvent', () => {
     const u64 = xdr.ScVal.scvU64(xdr.Uint64.fromString('1'));
     const address1 = xdr.ScVal.scvString('GCLIENTDEMOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
     const address2 = xdr.ScVal.scvString('GFREELANCERDEMOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
-    const amount = xdr.ScVal.scvU128(xdr.UInt128.fromString('1000'));
+    const amount = nativeToScVal(1000n, { type: 'u128' });
 
     const decoded = decodeEvent({
       id: 'test-id-1',
@@ -34,7 +34,7 @@ describe('decodeEvent', () => {
   it('decodes a deposit event', () => {
     const symbol = xdr.ScVal.scvSymbol('deposit');
     const u64 = xdr.ScVal.scvU64(xdr.Uint64.fromString('1'));
-    const amount = xdr.ScVal.scvU128(xdr.UInt128.fromString('500'));
+    const amount = nativeToScVal(500n, { type: 'u128' });
 
     const decoded = decodeEvent({
       id: 'test-id-2',
@@ -56,7 +56,7 @@ describe('decodeEvent', () => {
     const symbol = xdr.ScVal.scvSymbol('release');
     const escrowId = xdr.ScVal.scvU64(xdr.Uint64.fromString('1'));
     const index = xdr.ScVal.scvU64(xdr.Uint64.fromString('0'));
-    const amount = xdr.ScVal.scvU128(xdr.UInt128.fromString('250'));
+    const amount = nativeToScVal(250n, { type: 'u128' });
 
     const decoded = decodeEvent({
       id: 'test-id-3',
@@ -99,7 +99,7 @@ describe('decodeEvent', () => {
   it('decodes a resolved event', () => {
     const symbol = xdr.ScVal.scvSymbol('resolved');
     const escrowId = xdr.ScVal.scvU64(xdr.Uint64.fromString('1'));
-    const amount = xdr.ScVal.scvU128(xdr.UInt128.fromString('250'));
+    const amount = nativeToScVal(250n, { type: 'u128' });
 
     const decoded = decodeEvent({
       id: 'test-id-5',
@@ -121,7 +121,7 @@ describe('decodeEvent', () => {
   it('decodes a cancel event', () => {
     const symbol = xdr.ScVal.scvSymbol('cancel');
     const escrowId = xdr.ScVal.scvU64(xdr.Uint64.fromString('1'));
-    const refund = xdr.ScVal.scvU128(xdr.UInt128.fromString('500'));
+    const refund = nativeToScVal(500n, { type: 'u128' });
 
     const decoded = decodeEvent({
       id: 'test-id-6',
