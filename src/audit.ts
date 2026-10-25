@@ -11,8 +11,12 @@ export type AuditAction =
 
 export interface AuditState {
   status: string;
+  /** @deprecated lossy above 2^53; use fundedAmountUnits */
   fundedAmount: number;
+  /** @deprecated lossy above 2^53; use releasedAmountUnits */
   releasedAmount: number;
+  fundedAmountUnits?: string;
+  releasedAmountUnits?: string;
 }
 
 export interface AuditEntry {
@@ -48,10 +52,14 @@ function canonicalJSON(obj: unknown): string {
     return JSON.stringify(obj);
   }
   if (Array.isArray(obj)) {
-    return `[${obj.map(canonicalJSON).join(',')}]`;
+    return `[${obj.map((v) => (v === undefined ? 'null' : canonicalJSON(v))).join(',')}]`;
   }
-  const sortedKeys = Object.keys(obj).sort();
-  const pairs = sortedKeys.map((k) => `"${k}":${canonicalJSON((obj as Record<string, unknown>)[k])}`);
+  // Like JSON.stringify: skip undefined values so an entry hashes the same after a JSON round-trip.
+  const record = obj as Record<string, unknown>;
+  const sortedKeys = Object.keys(record)
+    .filter((k) => record[k] !== undefined)
+    .sort();
+  const pairs = sortedKeys.map((k) => `${JSON.stringify(k)}:${canonicalJSON(record[k])}`);
   return `{${pairs.join(',')}}`;
 }
 
@@ -88,6 +96,8 @@ export class AuditStore {
     before: AuditState;
     after: AuditState;
     details: Record<string, unknown>;
+    /** Timestamp (defaults to now); the store passes its own clock. */
+    at?: string;
   }): AuditEntry {
     const entry: Omit<AuditEntry, 'hash'> = {
       seq: this.nextSeq++,
@@ -95,7 +105,7 @@ export class AuditStore {
       action: params.action,
       actor: params.ctx?.actor ?? null,
       requestId: params.ctx?.requestId ?? null,
-      at: new Date().toISOString(),
+      at: params.at ?? new Date().toISOString(),
       before: params.before,
       after: params.after,
       details: params.details,
