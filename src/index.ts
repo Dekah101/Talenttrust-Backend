@@ -1,32 +1,28 @@
 import { createApp } from './app';
 import { config } from './config';
+import { startServer, parsePort } from './server';
 import { InMemoryEventStore } from './indexer/store';
 import { EventIndexer, withBackoff } from './indexer/indexer';
 
-const port = Number(process.env.PORT) || 3001;
+const port = parsePort(process.env.PORT);
 
 if (require.main === module) {
-  const app = createApp();
-  app.listen(port, () => {
-    console.log(`TalentTrust API listening on http://localhost:${port}`);
-  });
+  // The poller and the API share one event store, so indexed events are served by /api/v1/chain/events.
+  const eventStore = new InMemoryEventStore();
+  const indexer = new EventIndexer(eventStore);
+  startServer({ app: createApp(undefined, eventStore, indexer), port });
 
   if (config.indexerIntervalMs > 0) {
-    const store = new InMemoryEventStore();
-    const indexer = new EventIndexer(store);
-
-    async function poll() {
+    const poll = async () => {
       try {
         await withBackoff(() => indexer.runOnce());
-        console.log('Indexer batch completed');
       } catch (err) {
-        console.error('Indexer error:', err);
+        console.error('Indexer error:', err instanceof Error ? err.message : err);
       }
-    }
-
+    };
     console.log(`Starting indexer poller with interval ${config.indexerIntervalMs}ms`);
-    poll();
-    setInterval(poll, config.indexerIntervalMs);
+    void poll();
+    setInterval(() => void poll(), config.indexerIntervalMs).unref();
   }
 }
 

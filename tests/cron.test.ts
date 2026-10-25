@@ -34,6 +34,8 @@ describe('Cron endpoint', () => {
     process.env.CRON_SECRET = 'test-secret';
     const eventStore = new InMemoryEventStore();
     const indexer = new EventIndexer(eventStore);
+    // Fake RPC: tests never reach the network.
+    (indexer as any).rpc = { getEvents: async () => ({ events: [], cursor: 'cursor-0', latestLedger: 100 }) };
     const app = createApp(undefined, eventStore, indexer);
 
     const response = await request(app)

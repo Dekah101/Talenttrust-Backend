@@ -14,6 +14,7 @@ const DEFAULT_LIMIT = 100;
 
 export class EventIndexer {
   private store: EventStore;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private rpc: any;
   private isRunning = false;
   private lastError: string | null = null;
@@ -22,7 +23,8 @@ export class EventIndexer {
 
   constructor(store: EventStore, rpcUrl?: string) {
     this.store = store;
-    this.rpc = new sdk.Server(rpcUrl || config.rpcUrl);
+    // Soroban RPC client (constructing it does no I/O; tests replace it with a fake).
+    this.rpc = new sdk.rpc.Server(rpcUrl || config.rpcUrl, { allowHttp: (rpcUrl || config.rpcUrl).startsWith('http://') });
   }
 
   async runOnce(options: { limit?: number } = {}): Promise<{ processed: number; cursor: string; latestLedger: number }> {

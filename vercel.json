@@ -5,9 +5,7 @@
   "outputDirectory": "public",
   "rewrites": [{ "source": "/(.*)", "destination": "/api" }],
   "crons": [
-    {
-      "path": "/api/cron/index-events",
-      "schedule": "*/5 * * * *"
-    }
+    { "path": "/api/cron/expire-contracts", "schedule": "0 0 * * *" },
+    { "path": "/api/cron/index-events", "schedule": "30 0 * * *" }
   ]
 }
